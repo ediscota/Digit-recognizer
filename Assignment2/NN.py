@@ -81,81 +81,60 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(x_val), shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=len(x_test), shuffle=False)
 
-#Model training
-#setup dispositivo dove eseguire il training
-model = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model.to(device)
+# Funzione per allenare il modello
+def train_model(model, train_loader, val_loader, num_epochs, lr, device, best_model_path):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
-#definiamo funzione loss: in questo caso comprende anche softmax per layer output
-criterion = nn.CrossEntropyLoss()
+    best_val_loss = float('inf')
 
-#algoritmo usato nel training (minibatch stochastic gradient descent)
-optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-set_seed(seed)
+    for epoch in range(1, num_epochs + 1):
+        # Training Phase
+        model.train()
+        train_loss, train_correct, train_total = 0.0, 0, 0
 
-#definiamo training routine
+        for train_inputs, train_labels in train_loader:
+            train_inputs, train_labels = train_inputs.to(device), train_labels.to(device)
+            optimizer.zero_grad()
+            train_preds = model(train_inputs)
+            loss = criterion(train_preds, train_labels)
+            loss.backward()
+            optimizer.step()
 
-stats = {metric: [] for metric in ['loss', 'acc', 'val_loss', 'val_acc']}
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # Dimezza LR ogni 10 epoche
-best_val_loss = float('inf')  # Memorizza la miglior loss
-best_model_path = os.path.join(save_dir, 'best_model.pth')
+            train_loss += loss.item() * train_inputs.size(0)
+            train_correct += (train_preds.argmax(dim=1) == train_labels).sum().item()
+            train_total += train_inputs.size(0)
 
-for epoch in range(1, num_epochs + 1):
-    # TRAINING PHASE
-    model.train()
-    train_tot, train_epoch_loss, train_epoch_acc = 0, 0.0, 0
+        train_loss /= train_total
+        train_acc = train_correct / train_total
 
-    for train_inputs, train_labels in train_loader:
-        train_inputs, train_labels = train_inputs.to(device), train_labels.to(device)
-        optimizer.zero_grad()
+        # Validation Phase
+        model.eval()
+        val_loss, val_correct, val_total = 0.0, 0, 0
+        with torch.no_grad():
+            for val_inputs, val_labels in val_loader:
+                val_inputs, val_labels = val_inputs.to(device), val_labels.to(device)
+                val_preds = model(val_inputs)
+                loss = criterion(val_preds, val_labels)
 
-        train_preds = model(train_inputs)
-        train_loss = criterion(train_preds, train_labels)
+                val_loss += loss.item() * val_inputs.size(0)
+                val_correct += (val_preds.argmax(dim=1) == val_labels).sum().item()
+                val_total += val_inputs.size(0)
 
-        train_loss.backward()
-        optimizer.step()
+        val_loss /= val_total
+        val_acc = val_correct / val_total
 
-        _, train_preds = torch.max(train_preds, dim=1)
-        train_acc = torch.sum(train_preds == train_labels.data)
+        # Salvataggio miglior modello
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), best_model_path)
+            print(f"📌 Miglior modello salvato! Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-        train_epoch_loss += train_loss.item() * train_inputs.size(0)
-        train_epoch_acc += train_acc.item()
-        train_tot += train_inputs.size(0)
+        # Logging
+        if epoch % log_every == 0:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{now}] Epoch {epoch} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+                  f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-    train_loss = train_epoch_loss / train_tot
-    train_acc = train_epoch_acc / train_tot
-
-    # VALIDATION PHASE
-    model.eval()
-    val_tot, val_epoch_loss, val_epoch_acc = 0, 0.0, 0
-
-    with torch.no_grad():
-        for val_inputs, val_labels in val_loader:
-            val_inputs, val_labels = val_inputs.to(device), val_labels.to(device)
-            val_preds = model(val_inputs)
-            val_loss = criterion(val_preds, val_labels)
-
-            _, val_preds = torch.max(val_preds, dim=1)
-            val_acc = torch.sum(val_preds == val_labels.data)
-
-            val_epoch_loss += val_loss.item() * val_inputs.size(0)
-            val_epoch_acc += val_acc.item()
-            val_tot += val_inputs.size(0)
-
-    val_loss = val_epoch_loss / val_tot
-    val_acc = val_epoch_acc / val_tot
-
-    # SALVATAGGIO MODELLO MIGLIORE
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
-        torch.save(model.state_dict(), best_model_path)
-        #print(f"Miglior modello salvato con Val Loss: {val_loss:.4f} e Val Acc: {val_acc:.4f}")
-
-    # LOGGING
-    if epoch % log_every == 0:
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{now}] Epoch {epoch} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-              f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
-
-    scheduler.step()  # Aggiornamento del Learning Rate
+        scheduler.step()
