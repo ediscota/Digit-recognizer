@@ -36,7 +36,7 @@ x_val, x_test, y_val, y_test = train_test_split(x_val_test, y_val_test, random_s
 batch_size = 32
 lr = 0.0001
 num_epochs = 10
-hidden_dim = 5
+hidden_dim = 256
 
 seed = 10 # fixed seed for all random choices in PyTorch
 log_every = 1 # logging every x iterations
@@ -46,22 +46,31 @@ def set_seed(seed):
 
 class SimpleNN(nn.Module):
 
-#definisci la struttura della nn
-    def __init__(self, num_features, num_labels, hidden_dim):
-        super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(num_features, hidden_dim)  #  primo hidden layer
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)    #  secondo hidden layer
-        self.fc3 = nn.Linear(hidden_dim, num_labels)    # Output layer
 
-    def forward(self, x):
-        x = self.fc1(x)  # Primo layer
-        x = F.relu(x)    # ReLU dopo il primo layer
+ def __init__(self, num_features, num_labels, hidden_dim):
+    super(SimpleNN, self).__init__()
+    self.fc1 = nn.Linear(num_features, hidden_dim)  # primo hidden layer
+    self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+    self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+    self.fc4 = nn.Linear(hidden_dim, num_labels)  # Output layer
+    self.dropout = nn.Dropout(p=0.2)
 
-        x = self.fc2(x)  # Secondo layer
-        x = F.relu(x)    # ReLU dopo il secondo layer
 
-        x = self.fc3(x)  # Output finale
-        return x
+ def forward(self, x):
+    x = self.fc1(x)  # Primo layer
+    x = F.relu(x)  # ReLU dopo il primo layer
+    x = self.dropout(x)
+
+    x = self.fc2(x)  # Secondo layer
+    x = F.relu(x)
+    x = self.dropout(x)
+
+    x = self.fc3(x)
+    x = F.relu(x)
+    x = self.dropout(x)
+
+    x = self.fc4(x)  # Output finale
+    return x
 
 
 #rappresentiamo il dataset tramite un tensore
@@ -82,12 +91,32 @@ val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(x_val), shu
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=len(x_test), shuffle=False)
 
 # Funzione per allenare il modello
-def train_model(model, train_loader, val_loader, num_epochs, lr, device, best_model_path):
+def train_model():
+    model = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     best_val_loss = float('inf')
+
+    # Test function per verificare le predizioni
+    def test_prediction(test_input):
+        model.eval()
+        with torch.no_grad():
+            output = model(test_input)
+            probabilities = F.softmax(output, dim=1)
+            return probabilities
+
+    # Prendi un batch di test come riferimento
+    test_batch = next(iter(test_loader))
+    test_inputs, test_labels = test_batch
+    test_inputs = test_inputs.to(device)
+
+    print("Test iniziale prima del training:")
+    probs = test_prediction(test_inputs[:1])
+    print(f"Probabilità: {probs[0].cpu().numpy()}\n")
 
     for epoch in range(1, num_epochs + 1):
         # Training Phase
@@ -125,10 +154,24 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device, best_mo
         val_loss /= val_total
         val_acc = val_correct / val_total
 
+        # Test le predizioni su un esempio, refactora il test
+        if epoch % 2 == 0:
+            print(f"\nTest durante l'epoch {epoch}:")
+            probs = test_prediction(test_inputs[:1])
+            print(f"Probabilità: {probs[0].cpu().numpy()}")
+            print(f"Label corretta: {test_labels[0].item()}\n")
+
         # Salvataggio miglior modello
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), best_model_path)
+            model_path = os.path.join(save_dir, 'model1.pth')
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_loss': val_loss,
+                'val_acc': val_acc
+            }, model_path)
             print(f"📌 Miglior modello salvato! Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
         # Logging
@@ -138,3 +181,5 @@ def train_model(model, train_loader, val_loader, num_epochs, lr, device, best_mo
                   f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
         scheduler.step()
+
+    return model
