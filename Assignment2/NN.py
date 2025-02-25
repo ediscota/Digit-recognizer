@@ -91,8 +91,8 @@ val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(x_val), shu
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=len(x_test), shuffle=False)
 
 # Funzione per allenare il modello
-def train_model():
-    model = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
+def train_model(model):
+    #model = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()

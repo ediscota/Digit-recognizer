@@ -16,15 +16,6 @@ if os.path.exists(model_path):
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint['model_state_dict']) #?
     print(f"Modello caricato dall'epoch {checkpoint['epoch']} con accuracy {checkpoint['val_acc']:.4f}")
-
-    # Test immediato del modello, da eliminare
-    model.eval()
-    test_input = torch.randn(1, 784)  # Input casuale per test
-    with torch.no_grad():
-        output = model(test_input)
-        probs = F.softmax(output, dim=1)
-        print("\nTest del modello caricato:")
-        print(f"Probabilità output: {probs[0].numpy()}")
 else:
     print("Nessun modello trovato! Eseguo il training...")
     model = train_model()
@@ -57,15 +48,6 @@ def recognize_digit():
         # 4. Applica soglia per aumentare il contrasto
         threshold = 50
         image_array = np.where(image_array > threshold, 255, 0)
-
-        # Visualizza l'immagine preprocessata prima della normalizzazione, da eliminare
-        preprocessed_image = Image.fromarray(image_array.reshape(28, 28).astype('uint8'))
-        preprocessed_display = ImageTk.PhotoImage(
-            preprocessed_image.resize((100, 100)))  # Ingrandisci per migliore visualizzazione
-
-        # Aggiorna il label per mostrare l'immagine preprocessata, da eliminare
-        preprocessed_label.config(image=preprocessed_display)
-        preprocessed_label.image = preprocessed_display
 
         # 5. Normalizza e prepara per il modello
         image_array = image_array.reshape(1, 784) / 255.0
@@ -102,28 +84,6 @@ def recognize_digit():
     else:
         result_label.config(text="Seleziona prima un'immagine!")
 
-
-def test_with_mnist_image():#da eliminare
-    # Prendi una singola immagine dal test set
-    test_image = x_test[0:1]  # Prende la prima immagine
-
-    # Converti in tensor
-    image_tensor = torch.FloatTensor(test_image)
-    image_tensor = image_tensor.to(next(model.parameters()).device)
-
-    print("Test con immagine MNIST originale:")
-    print(f"Min: {test_image.min()}, Max: {test_image.max()}")
-    print(f"Media: {test_image.mean()}, Std: {test_image.std()}")
-
-    with torch.no_grad():
-        model.eval()
-        output = model(image_tensor)
-        probabilities = torch.nn.functional.softmax(output, dim=1)
-        predicted_label = torch.argmax(probabilities, dim=1).item()
-
-        print(f"\nProbabilità per ogni cifra (immagine MNIST):")
-        print(probabilities[0].cpu().numpy())
-
 # Creazione dell'interfaccia
 root = tk.Tk()
 root.title("Digit Recognizer")
@@ -138,13 +98,8 @@ btn_select.pack()
 btn_recognize = Button(root, text="Riconosci Cifra", command=recognize_digit)
 btn_recognize.pack()
 
-btn_test_mnist = Button(root, text="Test con MNIST", command=test_with_mnist_image)
-btn_test_mnist.pack()
-
 result_label = Label(root, text="")
 result_label.pack()
 
-preprocessed_label = Label(root)
-preprocessed_label.pack()
 
 root.mainloop()
