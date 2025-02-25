@@ -1,13 +1,12 @@
 import random, os
 from datetime import datetime
-# utilities from scikit-learn
 from sklearn.model_selection import train_test_split
-from sklearn.datasets import fetch_openml # utility to download the dataset
+from sklearn.datasets import fetch_openml
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-#configurazione
+
 data_dir = 'data'
 save_dir = 'models'
 if not os.path.exists(save_dir):
@@ -32,14 +31,14 @@ x_val, x_test, y_val, y_test = train_test_split(x_val_test, y_val_test, random_s
 
 
 
-#definiamo gli iperparametri,
+#iperparametri
 batch_size = 32
 lr = 0.0001
 num_epochs = 10
 hidden_dim = 256
 
-seed = 10 # fixed seed for all random choices in PyTorch
-log_every = 1 # logging every x iterations
+seed = 10
+log_every = 1
 def set_seed(seed):
     torch.manual_seed(seed)
     random.seed(seed)
@@ -73,7 +72,6 @@ class SimpleNN(nn.Module):
     return x
 
 
-#rappresentiamo il dataset tramite un tensore
 def get_tensor_dataset(x, y):
     x_tensor = torch.FloatTensor(x)
     y_tensor = torch.LongTensor(y)
@@ -85,14 +83,12 @@ train_dataset = get_tensor_dataset(x_train, y_train)
 val_dataset = get_tensor_dataset(x_val, y_val)
 test_dataset = get_tensor_dataset(x_test, y_test)
 
-#definiamo dataloader per caricare i dati in mini bach nella fase di training
+# dataloader per caricare i dati in mini bach nella fase di training
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=len(x_val), shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=len(x_test), shuffle=False)
 
-# Funzione per allenare il modello
 def train_model(model):
-    #model = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -101,7 +97,6 @@ def train_model(model):
 
     best_val_loss = float('inf')
 
-    # Test function per verificare le predizioni
     def test_prediction(test_input):
         model.eval()
         with torch.no_grad():
@@ -109,14 +104,10 @@ def train_model(model):
             probabilities = F.softmax(output, dim=1)
             return probabilities
 
-    # Prendi un batch di test come riferimento
     test_batch = next(iter(test_loader))
     test_inputs, test_labels = test_batch
     test_inputs = test_inputs.to(device)
 
-    print("Test iniziale prima del training:")
-    probs = test_prediction(test_inputs[:1])
-    print(f"Probabilità: {probs[0].cpu().numpy()}\n")
 
     for epoch in range(1, num_epochs + 1):
         # Training Phase
@@ -154,14 +145,12 @@ def train_model(model):
         val_loss /= val_total
         val_acc = val_correct / val_total
 
-        # Test le predizioni su un esempio, refactora il test
-        if epoch % 2 == 0:
-            print(f"\nTest durante l'epoch {epoch}:")
-            probs = test_prediction(test_inputs[:1])
-            print(f"Probabilità: {probs[0].cpu().numpy()}")
-            print(f"Label corretta: {test_labels[0].item()}\n")
+        if epoch % log_every == 0:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{now}] Epoch {epoch} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+                  f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-        # Salvataggio miglior modello
+        #salvataggio
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             model_path = os.path.join(save_dir, 'model1.pth')
@@ -172,14 +161,27 @@ def train_model(model):
                 'val_loss': val_loss,
                 'val_acc': val_acc
             }, model_path)
-            print(f"📌 Miglior modello salvato! Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
-
-        # Logging
-        if epoch % log_every == 0:
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{now}] Epoch {epoch} | Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-                  f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+            print(f"Nuovo miglior modello salvato Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
         scheduler.step()
+
+    #fase test
+    model_reloaded = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
+    resume = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])  # ?
+    model_reloaded.eval()
+
+    for batch in test_loader:
+        with torch.no_grad():
+            test_inputs, test_labels = batch
+            test_preds = model_reloaded(test_inputs)
+
+            test_preds = torch.log_softmax(test_preds, dim=1)
+            _, test_preds = torch.max(test_preds, dim=1)
+            test_acc = torch.sum(test_preds == test_labels.data)
+
+        print('Accuracy on test set: ' + str(test_acc.item() / len(test_labels)))
+
 
     return model
