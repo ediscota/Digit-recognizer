@@ -169,7 +169,7 @@ def train_model(model):
     model_reloaded = SimpleNN(num_features, num_labels, hidden_dim=hidden_dim)
     resume = torch.load(model_path, map_location=device)
     checkpoint = torch.load(model_path)
-    model.load_state_dict(checkpoint['model_state_dict'])  # ?
+    model_reloaded.load_state_dict(checkpoint['model_state_dict'])  # ?
     model_reloaded.eval()
 
     for batch in test_loader:
