@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from tkinter import filedialog, Label, Button
+from tkinter import filedialog, Label, Button, ttk
 import numpy as np
 from PIL import Image, ImageTk
 import torch
@@ -14,7 +14,7 @@ model = SimpleNN(num_features=784, num_labels=10, hidden_dim=256)
 if os.path.exists(model_path):
     print("Modello trovato. Caricamento del modello salvato")
     checkpoint = torch.load(model_path)
-    model.load_state_dict(checkpoint['model_state_dict']) #?
+    model.load_state_dict(checkpoint['model_state_dict'])
 else:
     print("Nessun modello trovato. Eseguo il training")
     model = train_model(model)
@@ -33,7 +33,7 @@ def select_image():
 
 def recognize_digit():
     if hasattr(label_image, 'file_path'):
-        #caricamento immagine e render
+        # Caricamento immagine e render
         image = Image.open(label_image.file_path).convert("L")
         image = image.resize((28, 28))
 
@@ -57,28 +57,29 @@ def recognize_digit():
 
         image_array = np.clip(image_array, 0, 1)
 
-
         image_tensor = torch.FloatTensor(image_array)
         image_tensor = image_tensor.to(next(model.parameters()).device)
 
         with torch.no_grad():
             model.eval()
             output = model(image_tensor)
-            probabilities = torch.nn.functional.softmax(output, dim=1)
-            predicted_label = torch.argmax(probabilities, dim=1).item()
+            probabilities = torch.nn.functional.softmax(output, dim=1)[0].cpu().numpy()
+            predicted_label = np.argmax(probabilities)
 
-            prob_text = "\n".join([f"{i}: {probabilities[0][i].item() * 100:.2f}%" for i in range(10)])
-            result_label.config(text=f"Cifra riconosciuta: {predicted_label}\n\nProbabilità:\n{prob_text}")
+            result_label.config(text=f"Cifra riconosciuta: {predicted_label}")
 
-            print(f"\nProbabilità per ogni cifra:")
-            print(probabilities[0].cpu().numpy())
+            # Aggiorna le barre di probabilità
+            for i in range(10):
+                prob_bars[i].config(value=probabilities[i] * 100)
+                prob_labels[i].config(text=f"{i}: {probabilities[i] * 100:.2f}%")
     else:
         result_label.config(text="Seleziona prima un'immagine!")
 
-#UI
+
+# UI
 root = tk.Tk()
 root.title("Digit Recognizer")
-root.geometry("400x500")
+root.geometry("400x600")
 
 label_image = Label(root)
 label_image.pack()
@@ -92,5 +93,20 @@ btn_recognize.pack()
 result_label = Label(root, text="")
 result_label.pack()
 
+# Contenitore per le barre di probabilità
+frame_probabilities = tk.Frame(root)
+frame_probabilities.pack()
+
+prob_bars = []
+prob_labels = []
+for i in range(10):
+    row = tk.Frame(frame_probabilities)
+    row.pack(fill='x', padx=10, pady=2)
+    label = Label(row, text=f"{i}: 0.00%", width=8, anchor='w')
+    label.pack(side='left')
+    progress = ttk.Progressbar(row, orient='horizontal', length=200, mode='determinate')
+    progress.pack(side='right', fill='x', expand=True)
+    prob_labels.append(label)
+    prob_bars.append(progress)
 
 root.mainloop()
